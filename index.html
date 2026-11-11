@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ChordShift – transpose chords from a photo</title>
+<style>
+:root{--bg:#eef2f6;--card:#fff;--ink:#17263b;--mute:#5b6b80;--line:#cfd8e3;--accent:#1f4e8c;--accent-ink:#fff;--chord:#0b5fb8;--chordbg:#e3eefb;--warn:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#10171f;--card:#18222e;--ink:#e8eef5;--mute:#9aabbd;--line:#2b3a4b;--accent:#6fa8f0;--accent-ink:#0b1622;--chord:#8fc0ff;--chordbg:#1d3350}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Avenir Next","Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+main{max-width:760px;margin:0 auto;padding:20px 16px 48px}
+h1{font:700 28px/1.15 "Avenir Next Condensed","Avenir Next",-apple-system,sans-serif;margin:8px 0 4px;letter-spacing:-.01em}
+.lede{color:var(--mute);margin:0 0 20px}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:0 0 14px}
+h2{font-size:17px;margin:0 0 10px}
+button,.btn{font:inherit;font-weight:600;border:0;border-radius:10px;padding:12px 16px;background:var(--accent);color:var(--accent-ink);min-height:46px;cursor:pointer;-webkit-appearance:none;appearance:none}
+button.alt,.btn.alt{background:transparent;color:var(--accent);border:1.5px solid var(--accent)}
+button:disabled{opacity:.45}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.file{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
+label.btn{display:inline-flex;align-items:center}
+.file:focus + label.btn{outline:3px solid var(--accent);outline-offset:2px}
+.check{display:flex;gap:8px;align-items:flex-start;margin:10px 0 0;font-size:15px}
+.check input{margin-top:5px;width:18px;height:18px}
+.hint{color:var(--mute);font-size:14px;margin:2px 0 0 26px}
+#preview{display:none;max-width:100%;max-height:260px;margin:12px 0 0;border-radius:8px;border:1px solid var(--line)}
+#status{margin:12px 0 0;font-size:15px;min-height:1.2em}
+#bar{display:none;height:6px;background:var(--line);border-radius:3px;margin-top:8px;overflow:hidden}
+#barFill{height:100%;width:0;background:var(--accent);transition:width .2s}
+textarea,pre{font:15px/1.45 ui-monospace,"SF Mono",Menlo,Consolas,monospace;tab-size:4}
+textarea{width:100%;min-height:200px;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg);color:var(--ink);white-space:pre;overflow:auto;resize:vertical;-webkit-appearance:none}
+.shiftbox{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.keys{display:flex;align-items:baseline;gap:10px;font:700 40px/1 "Avenir Next Condensed","Avenir Next",-apple-system,sans-serif;margin:2px 0 12px}
+.keys small{font:500 15px/1 -apple-system,sans-serif;color:var(--mute)}
+.arrow{color:var(--mute);font-weight:400}
+.step{min-width:56px;font-size:24px;padding:8px 0}
+#shift{min-width:64px;text-align:center;font:700 22px -apple-system,sans-serif}
+.seg{display:inline-flex;border:1.5px solid var(--accent);border-radius:10px;overflow:hidden}
+.seg label{padding:9px 14px;font-size:15px;font-weight:600;color:var(--accent);cursor:pointer}
+.seg input{position:absolute;opacity:0;width:1px;height:1px}
+.seg input:checked + span{background:var(--accent);color:var(--accent-ink)}
+.seg label{padding:0}.seg span{display:block;padding:9px 14px}
+.seg input:focus-visible + span{outline:3px solid var(--ink);outline-offset:-3px}
+pre{margin:0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);overflow-x:auto;min-height:80px;white-space:pre;-webkit-user-select:text;user-select:text}
+.cl{color:var(--chord);font-weight:700;background:var(--chordbg);display:inline-block;min-width:100%}
+.meta{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--mute);font-size:14px;margin:8px 0 0}
+.size{display:flex;align-items:center;gap:8px;margin:0 0 10px;color:var(--mute);font-size:14px}
+.size input{flex:1;max-width:200px}
+</style>
+</head>
+<body>
+<main>
+<h1>ChordShift</h1>
+<p class="lede">Take a photo of a chord chart, check what was read, then move it to any key. Everything runs on your device.</p>
+
+<section aria-labelledby="h-photo">
+  <h2 id="h-photo">Photo of the chart</h2>
+  <div class="row">
+    <input class="file" id="file" type="file" accept="image/*">
+    <label class="btn alt" for="file">Choose or take photo</label>
+    <button id="read" type="button" disabled>Read chords</button>
+  </div>
+  <label class="check"><input type="checkbox" id="only"> <span>The photo shows only chords, no lyrics</span></label>
+  <p class="hint">Gives better results on chord-only charts.</p>
+  <label class="check"><input type="checkbox" id="boost" checked> <span>Clean up the photo first</span></label>
+  <p class="hint">Turn off for crisp screenshots.</p>
+  <img id="preview" alt="Selected chart">
+  <div id="status" role="status" aria-live="polite"></div>
+  <div id="bar"><div id="barFill"></div></div>
+</section>
+
+<section aria-labelledby="h-text">
+  <h2 id="h-text">Chart text</h2>
+  <textarea id="src" spellcheck="false" autocapitalize="off" autocorrect="off" aria-label="Chart text" placeholder="The text from your photo appears here. You can also paste or type a chart, and fix anything the reader got wrong."></textarea>
+</section>
+
+<section aria-labelledby="h-key">
+  <h2 id="h-key">Transpose</h2>
+  <div class="keys" aria-live="polite"><span id="keyFrom">–</span><span class="arrow">&rarr;</span><span id="keyTo">–</span><small>first chord</small></div>
+  <div class="shiftbox">
+    <button class="step alt" id="down" type="button" aria-label="Down one semitone">&minus;</button>
+    <span id="shift">0</span>
+    <button class="step alt" id="up" type="button" aria-label="Up one semitone">+</button>
+    <span class="seg" role="radiogroup" aria-label="Accidentals">
+      <label><input type="radio" name="acc" value="auto" checked><span>Auto</span></label>
+      <label><input type="radio" name="acc" value="sharps"><span>&sharp;</span></label>
+      <label><input type="radio" name="acc" value="flats"><span>&flat;</span></label>
+    </span>
+  </div>
+</section>
+
+<section aria-labelledby="h-out">
+  <h2 id="h-out">Result</h2>
+  <div class="size"><label for="size">Text size</label><input type="range" id="size" min="12" max="24" value="15"></div>
+  <pre id="out" aria-live="polite"></pre>
+  <div class="meta"><span id="count"></span><button class="alt" id="copy" type="button" disabled>Copy result</button></div>
+</section>
+</main>
+<script src="vendor/tesseract.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
