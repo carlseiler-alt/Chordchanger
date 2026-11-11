@@ -263,8 +263,19 @@
     if (pct != null) els.barFill.style.width = Math.round(pct * 100) + '%';
   }
 
+  var stage = 'starting';
+  function withTimeout(promise, ms, label) {
+    return new Promise(function (resolve, reject) {
+      var t = setTimeout(function () {
+        reject(new Error('Timed out while ' + label + '. Close other tabs and try again.'));
+      }, ms);
+      promise.then(function (v) { clearTimeout(t); resolve(v); }, function (e) { clearTimeout(t); reject(e); });
+    });
+  }
+
   function getWorker() {
     if (worker) return Promise.resolve(worker);
+    if (typeof WebAssembly !== 'object') return Promise.reject(new Error('This browser has no WebAssembly support.'));
     if (location.protocol === 'file:') {
       return Promise.reject(new Error('Open this page from GitHub Pages or a web server, not from a local file.'));
     }
@@ -276,13 +287,16 @@
       cacheMethod: 'none',
       workerBlobURL: false,
       logger: function (m) {
+        if (!m.status) return;
         if (m.status === 'recognizing text') setStatus('Reading the image\u2026', 0.15 + m.progress * 0.85);
-        else if (m.status && /load|init/.test(m.status)) setStatus('Loading the reader (first time only)\u2026', 0.05 + (m.progress || 0) * 0.1);
+        else { stage = m.status; setStatus('Loading the reader (first time only): ' + m.status + '\u2026', 0.05 + (m.progress || 0) * 0.1); }
       }
     });
-    return w.load().then(function () { return w.loadLanguage('eng'); })
-      .then(function () { return w.initialize('eng'); })
-      .then(function () { worker = w; return w; });
+    return withTimeout(w.load(), 90000, 'starting the reader (' + stage + ')')
+      .then(function () { stage = 'language data'; return withTimeout(w.loadLanguage('eng'), 90000, 'loading language data'); })
+      .then(function () { stage = 'initialising'; return withTimeout(w.initialize('eng'), 90000, 'initialising the reader'); })
+      .then(function () { worker = w; return w; })
+      .catch(function (e) { try { w.terminate(); } catch (x) {} throw e; });
   }
 
   function readImage(file) {
@@ -301,7 +315,7 @@
           tessedit_char_whitelist: els.only.checked ? 'ABCDEFGMabdgijlmnstu#/()+-0123456789|% .' : '',
           preserve_interword_spaces: '1',
           tessedit_pageseg_mode: els.only.checked ? '11' : '6'
-        }).then(function () { return w.recognize(blob); });
+        }).then(function () { return withTimeout(w.recognize(blob), 180000, 'reading the image'); });
       });
     }).then(function (res) {
       els.src.value = rebuildText(res.data);
