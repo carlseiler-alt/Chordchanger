@@ -1,7 +1,7 @@
 /* ChordShift – chord transposition + OCR glue. Plain ES5-style JS for old Safari (iOS 15). */
 (function () {
   'use strict';
-  var VERSION = '1.1.0', BUILD_DATE = '12 Nov 2026';
+  var VERSION = '1.2.1', BUILD_DATE = '12 Nov 2026';
 
   /* ---------- Music theory ---------- */
   var SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -56,37 +56,86 @@
   }
 
   function tokenize(line) {
-    var re = /\S+/g, m, out = [];
+    var re = /:?\|+:?|[^\s|]+/g, m, out = [];
     while ((m = re.exec(line)) !== null) out.push({ text: m[0], index: m.index });
     return out;
   }
 
-  function isChordLine(line) {
-    var toks = tokenize(line), chords = 0, i, core;
-    if (!toks.length) return false;
-    for (i = 0; i < toks.length; i++) {
-      core = splitToken(toks[i].text).core;
-      if (core === '') continue;
-      if (parseChord(core)) chords++;
-      else if (!IGNORE_RE.test(core)) return false;
+  /* ---- Tolerant token handling: OCR slips, dirt, numbered alternatives ---- */
+  var ROOT_RE = /^[A-G][#b]?$/;
+  var MARK_RE = /^\(?\d{1,2}[.):\]]?\)?$/;                         // 1)  2.  (1)  2
+  var NOISE_ONLY = /^[;,.'`"~_^*\u2018\u2019\u201c\u201d\u00b7\u2022]+$/;  // specks of dirt
+  var NOISE_EDGE = /^[;,.'`"~_^*\u2018\u2019\u201c\u201d\u00b7\u2022]+|[;,.'`"~_^*\u2018\u2019\u201c\u201d\u00b7\u2022]+$/g;
+
+  function trySlash(t) {
+    var i, l, r;
+    for (i = 1; i < t.length; i++) {
+      l = parseChord(t.slice(0, i));
+      if (!l || l.bass) continue;
+      r = t.slice(i);
+      if (r.length > 1 && /^[lI1|!\\]/.test(r) && ROOT_RE.test(r.slice(1))) r = r.slice(1);  // slash read as l, I, 1, |
+      if (ROOT_RE.test(r)) return { root: l.root, qual: l.qual, bass: r };                      // "CG" -> C/G
     }
-    return chords > 0;
+    return null;
+  }
+
+  function resolveChord(core) {
+    var stripped = core.replace(NOISE_EDGE, '');
+    var mapped = stripped.replace(/[\u20ac\u00a2\u00a9]/g, 'C').replace(/[\u0161\u017e]/g, '#').replace(/rn/g, 'm').replace(/\/6$/, '/G').replace(/\/8$/, '/B');
+    var cands = [stripped, mapped, core], i, c;
+    for (i = 0; i < cands.length; i++) { c = parseChord(cands[i]); if (c) return c; }
+    for (i = 0; i < 2; i++) { c = trySlash(cands[i]); if (c) return c; }
+    return null;
+  }
+
+  /* kind: 'chord' | 'skip' (kept as is) | 'noise' (dropped) | null (not part of a chord line) */
+  function classify(tok) {
+    var p = splitToken(tok), core = p.core, c;
+    if (core === '') return tok.indexOf('|') >= 0 ? { kind: 'skip', text: tok } : { kind: 'noise' };   // bar lines stay, loose ":" goes
+    if (IGNORE_RE.test(core) || MARK_RE.test(core)) return { kind: 'skip', text: tok };
+    if (NOISE_ONLY.test(core)) return { kind: 'noise' };
+    c = resolveChord(core);
+    // ":" only means something next to a bar line (repeat signs), otherwise it is dirt
+    return c ? { kind: 'chord', chord: c, pre: p.pre.indexOf('|') >= 0 ? p.pre : '', post: p.post.indexOf('|') >= 0 ? p.post : '' } : null;
+  }
+
+  /* Decide whether a line is a chord line and what to do with each token. */
+  function analyse(line) {
+    var toks = tokenize(line), kinds = [], chords = 0, unknown = 0, i, k, t;
+    if (!toks.length) return null;
+    for (i = 0; i < toks.length; i++) {
+      t = toks[i].text; k = classify(t);
+      if (k) { if (k.kind === 'chord') chords++; }
+      else if (t.length <= 3) {          // short leftovers: lowercase = dirt read as letters, otherwise a damaged chord
+        unknown++;
+        k = /^[a-z]+$/.test(t) ? { kind: 'noise' } : { kind: 'skip', text: t };
+      } else return null;
+      kinds.push(k);
+    }
+    if (!chords) return null;
+    if (unknown && !(chords >= 2 && unknown <= Math.floor((chords + unknown) * 0.25))) return null;
+    return { toks: toks, kinds: kinds };
+  }
+
+  function isChordLine(line) { return !!analyse(line); }
+
+  function keyOf(c) {
+    var minor = isMinor(c.qual);
+    return { pc: pcOf(c.root), minor: minor, name: c.root + (minor ? 'm' : '') };
   }
 
   function findKey(text) {
-    var lines = normalise(text).split('\n'), i, j, toks, c;
+    var lines = normalise(text).split('\n'), i, j, c, an;
     for (i = 0; i < lines.length; i++) {
       if (/\[[^\]]+\]/.test(lines[i])) {
         var br = /\[([^\]]+)\]/g, m;
         while ((m = br.exec(lines[i])) !== null) {
-          c = parseChord(m[1].trim());
-          if (c) return { pc: pcOf(c.root), minor: isMinor(c.qual), name: c.root + (isMinor(c.qual) ? 'm' : '') };
+          c = resolveChord(m[1].trim());
+          if (c) return keyOf(c);
         }
-      } else if (isChordLine(lines[i])) {
-        toks = tokenize(lines[i]);
-        for (j = 0; j < toks.length; j++) {
-          c = parseChord(splitToken(toks[j].text).core);
-          if (c) return { pc: pcOf(c.root), minor: isMinor(c.qual), name: c.root + (isMinor(c.qual) ? 'm' : '') };
+      } else if ((an = analyse(lines[i]))) {
+        for (j = 0; j < an.kinds.length; j++) {
+          if (an.kinds[j].kind === 'chord') return keyOf(an.kinds[j].chord);
         }
       }
     }
@@ -107,28 +156,38 @@
     return list.indexOf(target) !== -1;
   }
 
+  /* A line that was not transposed but contains several chord-like words: probably a damaged chord line. */
+  function looksLikeChords(line) {
+    if (/\[[^\]]+\]/.test(line)) return false;
+    var toks = tokenize(line), n = 0, i, k;
+    for (i = 0; i < toks.length; i++) { k = classify(toks[i].text); if (k && k.kind === 'chord') n++; }
+    return n >= 2;
+  }
+
   function transposeLine(line, shift, flats, stats) {
     if (/\[[^\]]+\]/.test(line)) {
       var did = false;
       var res = line.replace(/\[([^\]]+)\]/g, function (all, inner) {
-        var c = parseChord(inner.trim());
+        var c = resolveChord(inner.trim());
         if (!c) return all;
         did = true; stats.count++;
         return '[' + shiftChord(c, shift, flats) + ']';
       });
       return { text: res, chordLine: did };
     }
-    if (!isChordLine(line)) return { text: line, chordLine: false };
+    var an = analyse(line);
+    if (!an) return { text: line, chordLine: false };
 
-    var toks = tokenize(line), out = '', i, parts, c, rep, col;
+    var toks = an.toks, out = '', i, k, rep, col, adjacent;
     for (i = 0; i < toks.length; i++) {
-      parts = splitToken(toks[i].text);
-      c = parts.core ? parseChord(parts.core) : null;
-      if (c) { rep = shiftChord(c, shift, flats); stats.count++; } else rep = parts.core;
-      rep = parts.pre + rep + parts.post;
+      k = an.kinds[i];
+      if (k.kind === 'noise') continue;
+      if (k.kind === 'chord') { rep = k.pre + shiftChord(k.chord, shift, flats) + k.post; stats.count++; }
+      else rep = k.text;
       col = toks[i].index;
+      adjacent = i > 0 && col === toks[i - 1].index + toks[i - 1].text.length;
       if (out.length < col) out += new Array(col - out.length + 1).join(' ');
-      else if (out.length > 0) out += ' ';
+      else if (out.length > 0 && !adjacent) out += ' ';
       out += rep;
     }
     return { text: out, chordLine: true };
@@ -140,7 +199,7 @@
     var stats = { count: 0 }, lines = text.split('\n'), res = [], i, r;
     for (i = 0; i < lines.length; i++) {
       r = transposeLine(lines[i], shift, flats, stats);
-      res.push({ text: r.text.replace(/\s+$/, ''), chordLine: r.chordLine });
+      res.push({ text: r.text.replace(/\s+$/, ''), chordLine: r.chordLine, suspect: !r.chordLine && looksLikeChords(lines[i]) });
     }
     return {
       lines: res, count: stats.count, key: key,
@@ -156,9 +215,7 @@
   }
 
   function repairLine(line) {
-    if (isChordLine(line)) return line;
-    var alt = line.replace(/[\u0161\u017e\u00df]/g, function (c) { return c === '\u00df' ? 'b' : '#'; });
-    return alt !== line && isChordLine(alt) ? alt : line;
+    return isChordLine(line) ? transposeLine(line, 0, false, { count: 0 }).text : line;
   }
 
   function rebuildText(data) {
@@ -189,6 +246,7 @@
         else if (row.length > 0) row += ' ';
         row += word.text.trim();
       }
+      if (/^[\s;:.,'`"~_^*\u2018\u2019\u201c\u201d\u00b7\u2022]*$/.test(row)) continue;   // only dirt
       out.push(repairLine(row));
       prev = L;
     }
@@ -247,16 +305,18 @@
 
   function render() {
     var text = els.src.value;
-    var r = transposeText(text, shift, mode), html = [], i;
+    var r = transposeText(text, shift, mode), html = [], i, warn = 0;
     last = r;
     for (i = 0; i < r.lines.length; i++) {
-      html.push(r.lines[i].chordLine ? '<span class="cl">' + esc(r.lines[i].text) + '</span>' : esc(r.lines[i].text));
+      html.push(r.lines[i].chordLine ? '<span class="cl">' + esc(r.lines[i].text) + '</span>'
+        : r.lines[i].suspect ? '<span class="cw">' + esc(r.lines[i].text) + '</span>' : esc(r.lines[i].text));
+      if (r.lines[i].suspect) warn++;
     }
     els.out.innerHTML = html.join('\n');
     els.shift.textContent = (shift > 0 ? '+' : shift < 0 ? '\u2212' : '') + Math.abs(shift);
     els.keyFrom.textContent = r.key ? r.key.name : '\u2013';
     els.keyTo.textContent = r.newKey || '\u2013';
-    els.count.textContent = r.count + (r.count === 1 ? ' chord' : ' chords') + ' found';
+    els.count.textContent = r.count + (r.count === 1 ? ' chord' : ' chords') + ' found' + (warn ? ' \u00b7 ' + warn + (warn === 1 ? ' line' : ' lines') + ' to check (yellow)' : '');
     els.copy.disabled = els.mk.disabled = !text.trim();
   }
 

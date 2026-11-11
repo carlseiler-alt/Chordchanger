@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="1.1.0">
+<meta name="app-version" content="1.2.1">
 <title>ChordShift – transpose chords from a photo</title>
 <style>
 :root{--bg:#eef2f6;--card:#fff;--ink:#17263b;--mute:#5b6b80;--line:#cfd8e3;--accent:#1f4e8c;--accent-ink:#fff;--chord:#0b5fb8;--chordbg:#e3eefb;--warn:#b3261e}
@@ -47,6 +47,8 @@ textarea{width:100%;min-height:200px;border:1px solid var(--line);border-radius:
 .seg input:focus-visible + span{outline:3px solid var(--ink);outline-offset:-3px}
 pre{margin:0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);overflow-x:auto;min-height:80px;white-space:pre;-webkit-user-select:text;user-select:text}
 .cl{color:var(--chord);font-weight:700;background:var(--chordbg);display:inline-block;min-width:100%}
+.cw{background:#fff1b8;color:#5c4400;display:inline-block;min-width:100%}
+@media (prefers-color-scheme:dark){.cw{background:#4a3b00;color:#ffe08a}}
 .meta{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--mute);font-size:14px;margin:8px 0 0}
 .size{display:flex;align-items:center;gap:8px;margin:0 0 10px;color:var(--mute);font-size:14px}
 .size input{flex:1;max-width:200px}
@@ -138,6 +140,6 @@ footer{text-align:center;color:var(--mute);font-size:13px;padding:0 16px calc(24
   <div id="viewScroll"><img id="viewImg" alt="Full size photo of the chart"></div>
 </div>
 <script src="vendor/tesseract.min.js?v=4.1.4"></script>
-<script src="app.js?v=1.1.0"></script>
+<script src="app.js?v=1.2.1"></script>
 </body>
 </html>
