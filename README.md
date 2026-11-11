@@ -14,5 +14,5 @@ Must be served over http(s); opening `index.html` as a local file won't work (br
 - Only lines made entirely of chords are transposed, so lyrics like "Am I" are left alone. Recognised chord lines are highlighted.
 - OCR can misread chords. Always glance at the "Chart text" box before transposing.
 
-## Why the OCR core is patched
+## About the patched OCR core (optional hardening)
 The stock `tesseract.js-core` asks the browser for 256 MB of WebAssembly memory up front, which iOS 15 Safari can't always grant (the reader then hangs while loading). The files in `vendor/core/` are the same builds with the initial memory lowered to 64 MB (it still grows when needed). `patch_core.py` shows the exact change.

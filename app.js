@@ -263,7 +263,7 @@
     if (pct != null) els.barFill.style.width = Math.round(pct * 100) + '%';
   }
 
-  var stage = 'starting';
+  var stage = 'starting', busy = false;
   function withTimeout(promise, ms, label) {
     return new Promise(function (resolve, reject) {
       var t = setTimeout(function () {
@@ -279,28 +279,28 @@
     if (location.protocol === 'file:') {
       return Promise.reject(new Error('Open this page from GitHub Pages or a web server, not from a local file.'));
     }
-    var base = new URL('.', location.href).href, w;
-    w = Tesseract.createWorker({
+    var base = new URL('.', location.href).href, w = null;
+    // Tesseract.js v4: createWorker() returns a Promise and the worker loads its core by itself.
+    return withTimeout(Tesseract.createWorker({
       workerPath: base + 'vendor/worker.min.js',
       corePath: base + 'vendor/core',
       langPath: base + 'vendor/lang',
       cacheMethod: 'none',
       workerBlobURL: false,
       logger: function (m) {
-        if (!m.status) return;
+        if (!m.status || !busy) return;
         if (m.status === 'recognizing text') setStatus('Reading the image\u2026', 0.15 + m.progress * 0.85);
         else { stage = m.status; setStatus('Loading the reader (first time only): ' + m.status + '\u2026', 0.05 + (m.progress || 0) * 0.1); }
       }
-    });
-    return withTimeout(w.load(), 90000, 'starting the reader (' + stage + ')')
-      .then(function () { stage = 'language data'; return withTimeout(w.loadLanguage('eng'), 90000, 'loading language data'); })
+    }), 90000, 'starting the reader (' + stage + ')')
+      .then(function (ww) { w = ww; stage = 'language data'; return withTimeout(w.loadLanguage('eng'), 90000, 'loading language data'); })
       .then(function () { stage = 'initialising'; return withTimeout(w.initialize('eng'), 90000, 'initialising the reader'); })
       .then(function () { worker = w; return w; })
-      .catch(function (e) { try { w.terminate(); } catch (x) {} throw e; });
+      .catch(function (e) { try { if (w) w.terminate(); } catch (x) {} throw e; });
   }
 
   function readImage(file) {
-    els.read.disabled = true;
+    els.read.disabled = true; busy = true;
     setStatus('Preparing image\u2026', 0.02);
     var url;
     loadImage(file).then(function (o) {
@@ -314,18 +314,21 @@
         return w.setParameters({
           tessedit_char_whitelist: els.only.checked ? 'ABCDEFGMabdgijlmnstu#/()+-0123456789|% .' : '',
           preserve_interword_spaces: '1',
-          tessedit_pageseg_mode: els.only.checked ? '11' : '6'
+          tessedit_pageseg_mode: '6'
         }).then(function () { return withTimeout(w.recognize(blob), 180000, 'reading the image'); });
       });
     }).then(function (res) {
+      busy = false;
       els.src.value = rebuildText(res.data);
       setShift(0);
       setStatus('Done. Check the text below and fix any misread chords.', null);
       els.src.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }).catch(function (e) {
+      busy = false;
       if (worker) { try { worker.terminate(); } catch (x) {} worker = null; }
       setStatus('Could not read the image: ' + (e && e.message ? e.message : e), null);
     }).then(function () {
+      busy = false;
       if (url) URL.revokeObjectURL(url);
       els.read.disabled = !els.file.files.length;
     });
