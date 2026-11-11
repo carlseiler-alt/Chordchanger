@@ -9,6 +9,12 @@ Photo of a chord chart → text → transposed chart. Runs fully in the browser 
 
 Must be served over http(s); opening `index.html` as a local file won't work (browsers block the OCR worker).
 
+## Languages
+OCR data for English and Estonian (ü ä õ ö š ž) is bundled in `vendor/lang/` (`eng` and `est`). The default reads both together; "chords only" photos use English only.
+
+## Version
+The version shows at the bottom of the page. To release a change, bump `VERSION` in `app.js`, the `app-version` meta tag and the `?v=` on the script tag in `index.html`, so phones don't keep a cached copy.
+
 ## Notes
 - Recognised: C, F#m7b5, Bbmaj7, Cadd9, Asus4, D/F#, `| G | D |` bars, and inline `[Am]` ChordPro chords.
 - Only lines made entirely of chords are transposed, so lyrics like "Am I" are left alone. Recognised chord lines are highlighted.

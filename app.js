@@ -1,6 +1,7 @@
 /* ChordShift – chord transposition + OCR glue. Plain ES5-style JS for old Safari (iOS 15). */
 (function () {
   'use strict';
+  var VERSION = '1.1.0', BUILD_DATE = '12 Nov 2026';
 
   /* ---------- Music theory ---------- */
   var SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -154,6 +155,12 @@
     return a[Math.floor(a.length / 2)];
   }
 
+  function repairLine(line) {
+    if (isChordLine(line)) return line;
+    var alt = line.replace(/[\u0161\u017e\u00df]/g, function (c) { return c === '\u00df' ? 'b' : '#'; });
+    return alt !== line && isChordLine(alt) ? alt : line;
+  }
+
   function rebuildText(data) {
     var lines = data && data.lines;
     if (!lines || !lines.length) return (data && data.text) || '';
@@ -182,7 +189,7 @@
         else if (row.length > 0) row += ' ';
         row += word.text.trim();
       }
-      out.push(row);
+      out.push(repairLine(row));
       prev = L;
     }
     return out.join('\n');
@@ -200,7 +207,7 @@
 
   function prepare(img, boost) {
     var w = img.naturalWidth, h = img.naturalHeight, long = Math.max(w, h);
-    var target = long < 1600 ? 2000 : Math.min(long, 2600);
+    var target = long < 1000 ? 1600 : Math.min(long, 2600);
     var s = target / long;
     var cw = Math.round(w * s), ch = Math.round(h * s);
     var cv = document.createElement('canvas');
@@ -233,7 +240,7 @@
 
   /* ---------- UI ---------- */
   var $ = function (id) { return document.getElementById(id); };
-  var shift = 0, mode = 'auto', worker = null;
+  var shift = 0, mode = 'auto', worker = null, last = null, imgUrl = null, imgBlob = null;
   var els = {};
 
   function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -241,6 +248,7 @@
   function render() {
     var text = els.src.value;
     var r = transposeText(text, shift, mode), html = [], i;
+    last = r;
     for (i = 0; i < r.lines.length; i++) {
       html.push(r.lines[i].chordLine ? '<span class="cl">' + esc(r.lines[i].text) + '</span>' : esc(r.lines[i].text));
     }
@@ -249,7 +257,7 @@
     els.keyFrom.textContent = r.key ? r.key.name : '\u2013';
     els.keyTo.textContent = r.newKey || '\u2013';
     els.count.textContent = r.count + (r.count === 1 ? ' chord' : ' chords') + ' found';
-    els.copy.disabled = !text.trim();
+    els.copy.disabled = els.mk.disabled = !text.trim();
   }
 
   function setShift(n) {
@@ -273,7 +281,9 @@
     });
   }
 
-  function getWorker() {
+  var workerLang = '';
+  function getWorker(lang) {
+    if (worker && workerLang !== lang) { try { worker.terminate(); } catch (x) {} worker = null; }
     if (worker) return Promise.resolve(worker);
     if (typeof WebAssembly !== 'object') return Promise.reject(new Error('This browser has no WebAssembly support.'));
     if (location.protocol === 'file:') {
@@ -293,9 +303,9 @@
         else { stage = m.status; setStatus('Loading the reader (first time only): ' + m.status + '\u2026', 0.05 + (m.progress || 0) * 0.1); }
       }
     }), 90000, 'starting the reader (' + stage + ')')
-      .then(function (ww) { w = ww; stage = 'language data'; return withTimeout(w.loadLanguage('eng'), 90000, 'loading language data'); })
-      .then(function () { stage = 'initialising'; return withTimeout(w.initialize('eng'), 90000, 'initialising the reader'); })
-      .then(function () { worker = w; return w; })
+      .then(function (ww) { w = ww; stage = 'language data'; return withTimeout(w.loadLanguage(lang), 90000, 'loading language data'); })
+      .then(function () { stage = 'initialising'; return withTimeout(w.initialize(lang), 90000, 'initialising the reader'); })
+      .then(function () { worker = w; workerLang = lang; return w; })
       .catch(function (e) { try { if (w) w.terminate(); } catch (x) {} throw e; });
   }
 
@@ -310,7 +320,8 @@
         cv.toBlob(function (b) { b ? res(b) : rej(new Error('Image too large for this device.')); }, 'image/png');
       });
     }).then(function (blob) {
-      return getWorker().then(function (w) {
+      var lang = els.only.checked ? 'eng' : els.lang.value;
+      return getWorker(lang).then(function (w) {
         return w.setParameters({
           tessedit_char_whitelist: els.only.checked ? 'ABCDEFGMabdgijlmnstu#/()+-0123456789|% .' : '',
           preserve_interword_spaces: '1',
@@ -351,8 +362,101 @@
     }
   }
 
+
+  /* ---------- Result image ---------- */
+  var MONO = '"SF Mono", Menlo, Consolas, "Courier New", monospace';
+
+  function makeImage() {
+    if (!last) return;
+    var dark = els.dark.checked, size = 30, pad = 44, lh = Math.round(size * 1.5);
+    var lines = last.lines.slice(), head = last.newKey
+      ? 'Key of ' + last.newKey + (shift ? '   (' + (shift > 0 ? '+' : '\u2212') + Math.abs(shift) + ')' : '') : '';
+    var cv = document.createElement('canvas'), ctx = cv.getContext('2d'), i, w = 0, tw;
+    ctx.font = 'bold ' + size + 'px ' + MONO;
+    for (i = 0; i < lines.length; i++) { tw = ctx.measureText(lines[i].text).width; if (tw > w) w = tw; }
+    var top = head ? lh * 1.6 : 0;
+    var W = Math.ceil(Math.max(w, head ? ctx.measureText(head).width : 0) + pad * 2), H = Math.ceil(lines.length * lh + pad * 2 + top);
+    var sc = 2;
+    while (sc > 0.5 && (W * sc > 4096 || H * sc > 8192 || W * H * sc * sc > 12e6)) sc -= 0.25;
+    cv.width = Math.round(W * sc); cv.height = Math.round(H * sc);
+    ctx.scale(sc, sc);
+    ctx.fillStyle = dark ? '#10171f' : '#ffffff'; ctx.fillRect(0, 0, W, H);
+    ctx.textBaseline = 'alphabetic';
+    var y = pad + size;
+    if (head) {
+      ctx.font = 'bold ' + Math.round(size * 0.8) + 'px -apple-system, "Helvetica Neue", Arial, sans-serif';
+      ctx.fillStyle = dark ? '#9aabbd' : '#5b6b80'; ctx.fillText(head, pad, y);
+      y += top;
+    }
+    for (i = 0; i < lines.length; i++) {
+      if (lines[i].chordLine) { ctx.font = 'bold ' + size + 'px ' + MONO; ctx.fillStyle = dark ? '#8fc0ff' : '#0b5fb8'; }
+      else { ctx.font = size + 'px ' + MONO; ctx.fillStyle = dark ? '#e8eef5' : '#17263b'; }
+      ctx.fillText(lines[i].text, pad, y);
+      y += lh;
+    }
+    cv.toBlob(function (b) {
+      if (!b) { els.imgNote.textContent = 'This chart is too big to turn into an image on this device.'; return; }
+      if (imgUrl) URL.revokeObjectURL(imgUrl);
+      imgBlob = b; imgUrl = URL.createObjectURL(b);
+      els.resImg.src = imgUrl;
+      els.imgBox.style.display = 'block';
+      els.imgNote.textContent = 'Press and hold the image to save it, or use the buttons.';
+      els.imgBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 'image/png');
+  }
+
+  function fileName() {
+    return 'chords' + (last && last.newKey ? '-' + last.newKey.replace('#', 'sharp') : '') + '.png';
+  }
+
+  function saveImage() {
+    if (!imgUrl) return;
+    var a = document.createElement('a');
+    a.href = imgUrl; a.download = fileName();
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+
+  function shareImage() {
+    if (!imgBlob) return;
+    try {
+      var f = new File([imgBlob], fileName(), { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [f] })) {
+        navigator.share({ files: [f], title: 'Transposed chords' }).catch(function () {});
+        return;
+      }
+    } catch (e) {}
+    saveImage();
+  }
+
+  /* ---------- Full photo viewer ---------- */
+  var zoom = 1;
+  function setZoom(z) {
+    zoom = Math.max(1, Math.min(4, z));
+    els.viewImg.style.width = (zoom * 100) + '%';
+    els.zlabel.textContent = Math.round(zoom * 100) + '%';
+  }
+  function openViewer() {
+    if (!els.preview.src) return;
+    els.viewImg.src = els.preview.src;
+    els.viewer.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+    setZoom(1); els.viewScroll.scrollTop = 0; els.viewScroll.scrollLeft = 0;
+    els.vclose.focus();
+  }
+  function closeViewer() {
+    els.viewer.style.display = 'none';
+    document.body.style.overflow = '';
+    els.open.focus();
+  }
+
+  function showVersion() {
+    var meta = document.querySelector('meta[name="app-version"]'), t = 'ChordShift v' + VERSION + ' \u00b7 ' + BUILD_DATE;
+    if (meta && meta.content !== VERSION) t += ' \u2014 page is v' + meta.content + ', reload to update';
+    els.ver.textContent = t;
+  }
+
   function init() {
-    ['file','preview','read','only','boost','status','bar','barFill','src','shift','keyFrom','keyTo','count','out','copy','down','up','size'].forEach(function (k) { els[k] = $(k); });
+    ['file','preview','read','only','boost','status','bar','barFill','src','shift','keyFrom','keyTo','count','out','copy','down','up','size','lang','mk','dark','imgBox','resImg','imgNote','save','share','open','viewer','viewImg','viewScroll','zlabel','vclose','zin','zout','zfit','ver','taller','shorter'].forEach(function (k) { els[k] = $(k); });
     els.file.addEventListener('change', function () {
       var f = els.file.files[0];
       els.read.disabled = !f;
@@ -370,6 +474,20 @@
     els.size.addEventListener('input', function () { els.out.style.fontSize = els.src.style.fontSize = els.size.value + 'px'; });
     var radios = document.querySelectorAll('input[name=acc]'), i;
     for (i = 0; i < radios.length; i++) radios[i].addEventListener('change', function (e) { mode = e.target.value; render(); });
+    els.mk.addEventListener('click', makeImage);
+    els.save.addEventListener('click', saveImage);
+    els.share.addEventListener('click', shareImage);
+    els.open.addEventListener('click', openViewer);
+    els.preview.addEventListener('click', openViewer);
+    els.vclose.addEventListener('click', closeViewer);
+    els.zin.addEventListener('click', function () { setZoom(zoom + 0.5); });
+    els.zout.addEventListener('click', function () { setZoom(zoom - 0.5); });
+    els.zfit.addEventListener('click', function () { setZoom(1); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && els.viewer.style.display === 'block') closeViewer(); });
+    els.taller.addEventListener('click', function () { els.src.style.height = (els.src.offsetHeight + 160) + 'px'; });
+    els.shorter.addEventListener('click', function () { els.src.style.height = Math.max(120, els.src.offsetHeight - 160) + 'px'; });
+    els.file.addEventListener('change', function () { els.open.style.display = els.file.files.length ? 'inline-flex' : 'none'; });
+    showVersion();
     render();
   }
 
