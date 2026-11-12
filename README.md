@@ -15,6 +15,11 @@ OCR data for English and Estonian (ü ä õ ö š ž) is bundled in `vendor/lang
 ## Version
 The version shows at the bottom of the page. To release a change, bump `VERSION` in `app.js`, the `app-version` meta tag and the `?v=` on the script tag in `index.html`, so phones don't keep a cached copy.
 
+## How the photo is read
+- The photo is resized so text lines are about 36 px tall (measured from the image), which is what the OCR reads best.
+- Two-column pages are detected from an empty vertical gutter and read column by column.
+- "CF" can mean C/F or two chords C F. The app uses the letter boxes from the OCR (touching = slash, gap = two chords) and, for typed text, whether the bass note fits the chord.
+
 ## Notes
 - Recognised: C, F#m7b5, Bbmaj7, Cadd9, Asus4, D/F#, `| G | D |` bars, and inline `[Am]` ChordPro chords.
 - Only lines made entirely of chords are transposed, so lyrics like "Am I" are left alone. Recognised chord lines are highlighted.

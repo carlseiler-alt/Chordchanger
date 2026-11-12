@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="1.2.1">
+<meta name="app-version" content="1.3.0">
 <title>ChordShift – transpose chords from a photo</title>
 <style>
 :root{--bg:#eef2f6;--card:#fff;--ink:#17263b;--mute:#5b6b80;--line:#cfd8e3;--accent:#1f4e8c;--accent-ink:#fff;--chord:#0b5fb8;--chordbg:#e3eefb;--warn:#b3261e}
@@ -81,12 +81,14 @@ footer{text-align:center;color:var(--mute);font-size:13px;padding:0 16px calc(24
   <div class="row" style="margin-top:12px">
     <label for="lang" style="font-weight:600">Lyrics language</label>
     <select id="lang">
-      <option value="eng+est" selected>Estonian + English (ü ä õ ö)</option>
+      <option value="est+eng" selected>Estonian + English (ü ä õ ö)</option>
       <option value="eng">English only</option>
     </select>
   </div>
   <label class="check"><input type="checkbox" id="only"> <span>The photo shows only chords, no lyrics</span></label>
   <p class="hint">Gives better results on chord-only charts.</p>
+  <label class="check"><input type="checkbox" id="cols" checked> <span>Split two-column pages automatically</span></label>
+  <p class="hint">Turn off if a single column gets cut in two.</p>
   <label class="check"><input type="checkbox" id="boost" checked> <span>Clean up the photo first</span></label>
   <p class="hint">Turn off for crisp screenshots.</p>
   <img id="preview" alt="Selected chart. Tap to view full size.">
@@ -140,6 +142,6 @@ footer{text-align:center;color:var(--mute);font-size:13px;padding:0 16px calc(24
   <div id="viewScroll"><img id="viewImg" alt="Full size photo of the chart"></div>
 </div>
 <script src="vendor/tesseract.min.js?v=4.1.4"></script>
-<script src="app.js?v=1.2.1"></script>
+<script src="app.js?v=1.3.0"></script>
 </body>
 </html>
