@@ -1,7 +1,7 @@
 /* ChordShift – chord transposition + OCR glue. Plain ES5-style JS for old Safari (iOS 15). */
 (function () {
   'use strict';
-  var VERSION = '1.3.0', BUILD_DATE = '12 Nov 2026';
+  var VERSION = '1.3.1', BUILD_DATE = '12 Nov 2026';
 
   /* ---------- Music theory ---------- */
   var SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -323,12 +323,21 @@
       if (L.bbox) heights.push(L.bbox.y1 - L.bbox.y0);
       for (j = 0; j < (L.words || []).length; j++) {
         w = L.words[j]; if (!w.text.trim()) continue;
+        if (/^[<>~_^*=;:\\`\u2022\u00b7]+$/.test(w.text.trim())) continue;   // lone symbol = dirt on the page
         wd = { text: splitMerged(w.text.trim(), w.symbols), x0: w.bbox.x0, x1: w.bbox.x1, line: i };
         words.push(wd);
         if (w.text.length >= 2) widths.push((w.bbox.x1 - w.bbox.x0) / w.text.length);
       }
     }
-    var charW = median(widths) || 10, lineH = median(heights) || 30;
+    // Grid cell width: lyrics are in a proportional font, so size the grid from the narrow end of the lyric
+    // letters. A wider cell makes lyric words overflow and get pushed right, away from the chords above them.
+    var lyr = [], q;
+    for (i = 0; i < words.length; i++) {
+      if (/[A-Za-z\u00c0-\u024f]{4}/.test(words[i].text) && !parseChord(words[i].text)) lyr.push((words[i].x1 - words[i].x0) / words[i].text.length);
+    }
+    lyr.sort(function (p, r) { return p - r; });
+    q = lyr.length >= 6 ? lyr[Math.floor(lyr.length * 0.1)] : 0;
+    var charW = q || median(widths) || 10, lineH = median(heights) || 30;
     var cut = (!opts || opts.columns !== false) ? findGutter(words) : null;
     function rowsFor(pick) {
       var rows = [], k, ws;
